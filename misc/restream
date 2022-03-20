@@ -64,6 +64,10 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+if [ -z "$video" ]; then
+    usage "Missing video URL"
+fi
+
 json="$(yt-dlp ${cookies:+"--cookies"} ${cookies:+"$cookies"} -j --wait-for-video 30 "$video")"
 
 do_jq() {
