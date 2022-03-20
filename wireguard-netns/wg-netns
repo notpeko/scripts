@@ -10,7 +10,7 @@ set -euf
 ## Network interface to be used by wireguard
 [ -z "${WG_INTERFACE+x}" ] && WG_INTERFACE="wg69"
 
-if [ "$1" = "__ns_helper" ]; then
+if [ "${1+x}" = "__ns_helper" ]; then
     pid_fifo="$2"
     setup_fifo="$3"
     shift 3;
