@@ -1,0 +1,14 @@
+#!/bin/sh
+set -euf
+
+if [ $# -eq 0 -o $# -gt 2 ]; then
+    echo "Usage: $(basename "$0") <input file> [output file (defaults to <input> with extension replaced with m4a)]" 1>&2;
+    exit 1;
+fi
+
+input="$1"
+output="${input%.*}.m4a"
+[ $# -eq 2 ] && output="$2"
+
+ffmpeg -i "$input" -map 0 -map -V -c copy "$output"
+
