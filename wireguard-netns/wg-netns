@@ -9,18 +9,60 @@ set -euf
 [ -z "${SLIRP_INTERFACE+x}" ] && SLIRP_INTERFACE="eth69"
 ## Network interface to be used by wireguard
 [ -z "${WG_INTERFACE+x}" ] && WG_INTERFACE="wg69"
+## Prevent program from bypassing wireguard tunnel
+[ -z "${WG_PREVENT_BYPASS+x}" ] && WG_PREVENT_BYPASS=1
 
-if [ "$#" -gt 0 ] && [ "$1" = "__ns_helper" ]; then
+slirp() {
+    pid="$(cat "$1")"
+    slirp4netns -6 --configure --mtu=65520 --ready-fd=9 \
+        "$pid" "$SLIRP_INTERFACE" < /dev/null 9>$2 > /dev/null 2>&1 &
+    echo "$!" > "$3"
+}
+
+start_ns() {
+    fifo_dir="$1"
+    ns="$2"
+    shift 2;
+
+    pid_fifo="$fifo_dir/$ns-pid.fifo"
+    mkfifo "$pid_fifo"
+    ready_fifo="$fifo_dir/$ns-ready.fifo"
+    mkfifo "$ready_fifo"
+    slirp_pid_fifo="$fifo_dir/$ns-slirp-pid.fifo"
+    mkfifo "$slirp_pid_fifo"
+
+    slirp "$pid_fifo" "$ready_fifo" "$slirp_pid_fifo" &
+
+    ret=0
+    unshare --map-root-user --net "$0" "__$ns" "$fifo_dir" "$pid_fifo" "$ready_fifo" "$@" || ret=$?
+
+    slirp_pid="$(cat "$slirp_pid_fifo")"
+    kill "$slirp_pid"
+
+    return $ret
+}
+
+if [ "$#" -gt 0 ] && [ "$1" = "__ns2" ]; then
+    pid_fifo="$3"
+    ready_fifo="$4"
+    shift 4;
+
+    # pass pid to slirp4netns
+    echo $$ > "$pid_fifo"
+    # wait for interface configuration
+    head -c 1 < "$ready_fifo" > /dev/null
+
+    exec "$@"
+fi
+if [ "$#" -gt 0 ] && [ "$1" = "__ns1" ]; then
     fifo_dir="$2"
     pid_fifo="$3"
     ready_fifo="$4"
     shift 4;
     # pass pid to slirp4netns
     echo $$ > "$pid_fifo"
-    rm "$pid_fifo"
     # wait for interface configuration
     head -c 1 < "$ready_fifo" > /dev/null
-    rm "$ready_fifo"
 
     # set up wireguard
     SLIRP_GATEWAY="$(ip route show default | grep -oP 'via \K(\S+)')"
@@ -31,7 +73,7 @@ if [ "$#" -gt 0 ] && [ "$1" = "__ns_helper" ]; then
 
     privkey_fifo="$fifo_dir/privkey.fifo";
     mkfifo "$privkey_fifo";
-    echo "$WG_PRIV" > "$privkey_fifo" && rm "$privkey_fifo" &
+    echo "$WG_PRIV" > "$privkey_fifo" &
     
     wg set "$WG_INTERFACE" private-key "$privkey_fifo" peer "$WG_PEER_PUB" \
         allowed-ips "$WG_PEER_ALLOWED_IPS" endpoint "$WG_PEER_ENDPOINT";
@@ -55,7 +97,13 @@ if [ "$#" -gt 0 ] && [ "$1" = "__ns_helper" ]; then
     # don't leak private key to child processes
     unset WG_PRIV
 
-    exec "$@"
+    if [ "$WG_PREVENT_BYPASS" = "0" ]; then
+        exec "$@"
+    fi
+
+    # the nested namespace can't see/interact with the wireguard tunnel
+    start_ns "$fifo_dir" "ns2" "$@"
+    exit $?
 fi
 
 if [ $# -lt 2 ]; then
@@ -99,16 +147,6 @@ export WG_PEER_ENDPOINT="$(get_single_field Endpoint)"
 fifo_dir="$(mktemp -d)"
 trap "rm -rf '$fifo_dir'" EXIT
 
-pid_fifo="$fifo_dir/pid.fifo"
-mkfifo "$pid_fifo"
-ready_fifo="$fifo_dir/ready.fifo"
-mkfifo "$ready_fifo"
-
-slirp() {
-    pid="$(cat "$pid_fifo")"
-    slirp4netns --configure --mtu=65520 --ready-fd=9 "$pid" eth69 < /dev/null > /dev/null 2>&1 9>$ready_fifo &
-}
-
-slirp &
-unshare --map-root-user --net "$0" "__ns_helper" "$fifo_dir" "$pid_fifo" "$ready_fifo" "$@"
+start_ns "$fifo_dir" "ns1" "$@"
+exit $?
 
