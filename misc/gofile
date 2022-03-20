@@ -44,7 +44,7 @@ check_files() {
 upload_existing_folder() {
     for f in "$@"; do
         echo "Uploading $f..."
-        response="$(curl -L -F token="$GOFILE_TOKEN" -F folderId="$GOFILE_FOLDER" -F file=@"$f" "$server/uploadFile")"
+        response="$(curl -L -F token="$GOFILE_TOKEN" -F folderId="$GOFILE_FOLDER" -F "file=@\"$f\"" "$server/uploadFile")"
         export GOFILE_PAGE="$(get_field "$response" .data.downloadPage "Uploading file $f")"
     done
 }
@@ -53,7 +53,7 @@ upload_existing_account() {
     f="$1"
     shift
     echo "Uploading $f..."
-    response="$(curl -L -F token="$GOFILE_TOKEN" -F file=@"$f" "$server/uploadFile")"
+    response="$(curl -L -F token="$GOFILE_TOKEN" -F "file=@\"$f\"" "$server/uploadFile")"
 
     export GOFILE_PAGE="$(get_field "$response" .data.downloadPage "Uploading file $f")"
     export GOFILE_FOLDER="$(get_field "$response" .data.parentFolder "shouldn't fail here")"
@@ -66,7 +66,7 @@ upload_new_guest_account() {
     f="$1"
     shift
     echo "Uploading $f..."
-    response="$(curl -L -F file=@"$f" "$server/uploadFile")"
+    response="$(curl -L -F "file=@\"$f\"" "$server/uploadFile")"
 
     export GOFILE_PAGE="$(get_field "$response" .data.downloadPage "Uploading file $f")"
     export GOFILE_TOKEN="$(get_field "$response" .data.guestToken "shouldn't fail here")"
