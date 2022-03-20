@@ -28,7 +28,7 @@ ext="$(basename -- "$in")"
 ext="${ext##*.}"
 
 clean() {
-    echo "$@" | tr '[<>:"/\|?*]' '_'
+    echo "$@" | tr '<>:"/\|?*' '_'
 }
 
 out="[$date] $(clean "$title") [$(clean "$channel")] ($id).$ext"
