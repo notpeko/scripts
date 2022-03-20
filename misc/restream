@@ -87,7 +87,7 @@ do_jq() {
 if [ "$url" = 1 ]; then
     content="$(do_jq .manifest_url)"
 else
-    content="$(do_jq '"[" + .upload_date + "] " + .title + " [" + .channel + "] (" + .id + ")\n\n" + .manifest_url')"
+    content="$(do_jq '"[" + .upload_date + "] " + .fulltitle + " [" + .channel + "] (" + .id + ")\n\n" + .manifest_url')"
 fi
 
 echo "$content"
