@@ -21,6 +21,7 @@ get_field() {
     shift 2
     if [ "$(echo "$response" | jq --raw-output .status)" != "ok" ]; then
         echo "$@ failed" 1>&2;
+        echo "$response" 1>&2;
         exit 1;
     fi
     echo "$response" | jq --raw-output "$field"
