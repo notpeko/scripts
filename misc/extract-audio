@@ -2,7 +2,7 @@
 set -euf
 
 if [ $# -eq 0 -o $# -gt 2 ]; then
-    echo "Usage: $(basename "$0") <input file> [output file (defaults to <input> with extension replaced with m4a)]" 1>&2;
+    echo "Usage: $(basename "$0") <input file> [output file (defaults to <input> with extension replaced with an appropriate format)]" 1>&2;
     exit 1;
 fi
 
@@ -25,9 +25,19 @@ fi
 
 echo "Extracting audio from '$input' into '$output'"
 # try with thumbnail
-if ! ffmpeg -loglevel warning -hide_banner -stats -i "$input" -map 0 -map -V -c copy "$output"; then
+if ! ffmpeg -loglevel warning -hide_banner -i "$input" -map 0 -map -V -c copy "$output"; then
     echo "Failed to extract audio, trying without thumbnail" 1>&2
     # otherwise try without it
-    ffmpeg -loglevel warning -hide_banner -stats -i "$input" -map 0 -map -v -c copy -y "$output"
+    ffmpeg -loglevel warning -hide_banner -i "$input" -map 0 -map -v -c copy -y "$output"
+    # https://github.com/Martchus/tageditor
+    if command -v tageditor > /dev/null; then
+        echo "Trying to add thumbnail with tageditor" 1>&2
+        thumb="$(mktemp --suffix=.png)"
+        trap "rm $thumb" EXIT;
+        ffmpeg -loglevel warning -hide_banner -i "$input" -map 0 -map -V -map -a -c copy -y "$thumb"
+        tageditor set "cover=$thumb" -f "$output"
+    else
+        echo "Unable to add thumbnail to file, install tageditor (https://github.com/Martchus/tageditor) to do it."
+    fi
 fi
 
