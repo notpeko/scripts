@@ -1,0 +1,20 @@
+#!/bin/sh
+set -euf
+
+if [ $# -eq 0 ]; then
+    echo "Usage: $(basename "$0") [ytarchive options] <video>" 1>&2
+    exit 1
+fi
+
+ytarchive                                                       \
+    -o "[%(upload_date)s] %(title)s [%(channel)s] (%(id)s)"     \
+    --add-metadata                                              \
+    --merge                                                     \
+    --mkv                                                       \
+    --threads 6                                                 \
+    --thumbnail                                                 \
+    --vp9                                                       \
+    --wait                                                      \
+    --write-thumbnail                                           \
+    "$@"
+

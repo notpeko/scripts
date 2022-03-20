@@ -1,0 +1,58 @@
+#!/bin/sh
+set -euf
+
+concurrency=16
+external_downloader="--external-downloader aria2c"
+write_info_json="--write-info-json"
+write_thumbnail="--write-thumbnail"
+
+if [ $# -eq 0 ]; then
+    cat 1>&2 <<EOF
+Usage: $(basename "$0") [options] <yt-dlp arguments>
+
+  --concurrency <value>     How many concurrent fragments/connections to use
+  --no-aria2c               Don't use aria2c as an external downloader
+  --no-info-json            Don't write info.json
+  --no-thumbnail            Don't write thumbnail
+EOF
+    exit 1
+fi
+
+while :; do
+    case "$1" in
+        --concurrency)
+            concurrency="$2"
+            shift
+            shift
+            ;;
+        --no-aria2c)
+            external_downloader=""
+            shift
+            ;;
+        --no-info-json)
+            write_info_json=""
+            shift
+            ;;
+        --no-thumbnail)
+            write_thumbnail=""
+            shift
+            ;;
+        *)
+            break;
+    esac
+done
+
+
+yt-dlp -o "[%(upload_date)s] %(title)s [%(channel)s] (%(id)s).%(ext)s"          \
+    --concurrent-fragments "$concurrency"                                       \
+    $external_downloader                                                        \
+    --downloader-args aria2c:"-j $concurrency -x $concurrency -s $concurrency"  \
+    $write_info_json                                                            \
+    $write_thumbnail                                                            \
+    --embed-chapters                                                            \
+    --embed-metadata                                                            \
+    --embed-subs                                                                \
+    --embed-thumbnail                                                           \
+    --compat-options no-attach-info-json                                        \
+    "$@"
+

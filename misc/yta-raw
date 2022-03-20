@@ -1,0 +1,26 @@
+#!/bin/sh
+set -euf
+
+if [ $# -eq 0 ]; then
+    echo "Usage: $(basename "$0") <json file> [ytarchive-raw options]" 1>&2;
+    exit 1;
+fi
+
+json="$1"
+shift
+
+q() {
+    cat "$json" | jq .metadata | jq --raw-output "$1"
+}
+
+date="$(q '.startTimestamp | split("T") | .[0] | split("-") | join("")')"
+filename_base="[${date}] $(q .title) [$(q .channelName)] ($(q .id))"
+# sanitize path (replaces <, >, :, ", /, \, |, ? and * with _)
+filename_base="$(echo "$filename_base" | tr "<>:\"/\\\\|?*" '_')"
+
+ytarchive-raw                                   \
+    -i "$json"                                  \
+    -o "$filename_base.mkv"                     \
+    -t 6                                        \
+    "$@"
+
