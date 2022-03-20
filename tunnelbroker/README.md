@@ -31,11 +31,11 @@ network:
 SERVER\_IPV4 is the address in the tunnelbroker page
 YOUR\_LOCAL\_IPV4 is the ipv4 address the machine has on it's NIC (for servers, it's usually the public ip, but check `ip a` just in case)
 
-5. Apply the configuration temporarily with `sudo netplan try --config-file <path to the file you created above> && sudo ip -6 route replace local X:Y:Z::/48 dev lo`. This will automatically reset after 120 seconds.
+5. Apply the configuration temporarily with `sudo netplan try --state /etc/netplan --config-file <path to the file you created above>`. This will automatically reset in 120 seconds.
 
-6. test it using the `test.sh` file in this folder: `./test.sh X:Y:Z`
+6. In another shell, run `sudo ip -6 route replace local X:Y:Z::/48 dev lo` and test it using the `test.sh` file in this folder: `./test.sh X:Y:Z`
 
-7. if it works, move the netplan config file to `/etc/netplan`
+7. if it works, move the netplan config file to `/etc/netplan/<name>.yaml`
 
 8. create a systemd service to run the `ip -6 route replace` command at startup
 
