@@ -10,6 +10,7 @@ ytarchive                                                       \
     -o "[%(upload_date)s] %(title)s [%(channel)s] (%(id)s)"     \
     --add-metadata                                              \
     --debug                                                     \
+    --ipv6                                                      \
     --merge                                                     \
     --mkv                                                       \
     --threads 6                                                 \
