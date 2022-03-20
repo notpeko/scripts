@@ -205,6 +205,7 @@ download_folder() {
 
     mega-login "$target";
     raw="$(mega-ls --show-handles -l -r)";
+    mega-logout;
     mega-quit;
 
     echo "$raw" | "$parser" "$@" | while read path; do
