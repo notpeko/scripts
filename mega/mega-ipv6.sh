@@ -67,9 +67,9 @@ else
     exit 1;
 fi
 
-FOLDER_PATTERN="^https?://mega.nz/folder/[a-z0-9]+#[a-z0-9]+$"
-FILE_PATTERN="^https?://mega.nz/file/[a-z0-9]+#[a-z0-9]+$"
-FILE_IN_FOLDER_PATTERN="^https?://mega.nz/folder/[a-z0-9]+#[a-z0-9]+/file/[a-z0-9]+$"
+FOLDER_PATTERN="^https?://mega.nz/folder/[-a-z0-9]+#[-a-z0-9]+$"
+FILE_PATTERN="^https?://mega.nz/file/[-a-z0-9]+#[-a-z0-9]+$"
+FILE_IN_FOLDER_PATTERN="^https?://mega.nz/folder/[-a-z0-9]+#[-a-z0-9]+/file/[-a-z0-9]+$"
 
 log() {
     echo "[$(basename $0)] $@";
