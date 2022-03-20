@@ -1,40 +1,99 @@
 #!/bin/sh
 set -euf
 
-if [ "$#" != 2 ]; then
+usage() {
     cat 1>&2 <<EOF
-Usage: $(basename -- "$0") <input file> <video url/id>
+Usage: $(basename -- "$0") <input file> <video url/id/info json> [thumbnail (only if using info json)]
 EOF
     exit 1
+}
+
+getenv_or() {
+    env -0 | grep -zo -m 1 -P "^$1=\\K(.*)" || echo "$2"
+}
+
+if [ "$#" -lt 2 ]; then
+    usage
 fi
 
 in="$1"
 video="$2"
 
+if [ -r "$video" ]; then
+    [ "$#" = 3 ] || usage
+    in_thumb="$3"
+else
+    [ "$#" = 2 ] || usage
+fi
+
 json="$(mktemp)"
 mkv="$(mktemp --suffix=.mkv)"
+dl_thumb="$(mktemp)"
 thumb="$(mktemp --suffix=.jpg)"
-trap "rm '$json' '$mkv' '$thumb'" EXIT
+var_dir="$(mktemp -d)"
+trap "rm -rf '$json' '$mkv' '$dl_thumb' '$thumb' '$var_dir'" EXIT
 
-yt-dlp -j --skip-download --ignore-no-formats-error -- "$video" > "$json"
+var() { 
+    [ "$#" != 1 ] && echo "fail" 1>&2 && exit 1
+    echo "$var_dir/$1"
+}
 
-channel="$(jq -r .channel "$json")"
-date="$(jq -r .release_date "$json")"
-desc="$(jq -r .description "$json")"
-id="$(jq -r .id "$json")"
-title="$(jq -r .title "$json")"
+# info json
+if [ -r "$video" ]; then   
+    cp "$video" "$json"
+    cp "$in_thumb" "$thumb"
+else
+    yt-dlp -j --skip-download --ignore-no-formats-error -- "$video" > "$json"
+fi
+
+query_json() {
+    yt-dlp                                                              \
+        --skip-download                                                 \
+        --ignore-no-formats-error                                       \
+        --parse-metadata "%(release_date,upload_date)s:%(date)s"        \
+        --parse-metadata "%(release_date,upload_date)s:%(meta_date)s"   \
+        --load-info-json "$json"                                        \
+        "$@"
+}
+
+print_field() {
+    [ "$#" != 1 ] && echo "fail" 1>&2 && exit 1
+    query_json --print "$1"
+}
 
 ext="$(basename -- "$in")"
 ext="${ext##*.}"
+output_format="$(getenv_or YT_OUTPUT '[%(date)s] %(title)s [%(channel)s] (%(id)s)')"
 
-clean() {
-    echo "$@" | tr '<>:"/\|?*' '_'
-}
+for field in channel date description id title; do
+    print_field "$field" > "$(var "$field")" &
+done
+out="$(query_json --get-filename -o "$output_format").$ext"
+wait
+for field in channel date description id title; do
+    eval "$field=\"\$(cat \"\$(var \"\$field\")\")\""
+done
 
-out="[$date] $(clean "$title") [$(clean "$channel")] ($id).$ext"
-
-
-wget "$(jq -r .thumbnail "$json")" -O "$thumb"
+if [ ! -r "$video" ]; then
+    if command -v convert > /dev/null; then
+        jq -re '.thumbnails | sort_by(.preference) | reverse[] | .url' "$json" | while read url; do
+            if wget -O "$dl_thumb" "$url"; then
+                convert "$dl_thumb" "$thumb"
+                break
+            fi
+        done
+    else
+        jq -re '.thumbnails | sort_by(.preference) | reverse[] | .url | select(. | endswith(".jpg"))' "$json" | while read url; do
+            if wget -O "$thumb" "$url"; then
+                break
+            fi
+        done
+    fi
+    if [ "$(stat -c %s "$thumb")" = 0 ]; then
+        echo "Unable to download thumbnail" 1>&2
+        exit 1
+    fi
+fi
 
 ffmpeg                                      \
     -hide_banner                            \
@@ -43,7 +102,7 @@ ffmpeg                                      \
     -c copy                                 \
     -map_metadata -1                        \
     -metadata "title=$title"                \
-    -metadata "comment=$desc"               \
+    -metadata "comment=$description"        \
     -metadata "author=$channel"             \
     -metadata "artist=$channel"             \
     -metadata "episode_id=$id"              \
