@@ -16,10 +16,10 @@ fi
 
 ytarchive-raw-go                                                    \
     --log-level debug                                               \
-    --retries 30                                                    \
+    --retries 50                                                    \
     --input "$json"                                                 \
     --output "[%(upload_date)s] %(title)s [%(channel)s] (%(id)s)"   \
-    --threads 12                                                    \
+    --threads 16                                                    \
     --temp-dir "yta_raw_temp"                                       \
     "$@" 2>&1 | tee log.txt
 
