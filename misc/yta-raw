@@ -9,6 +9,11 @@ fi
 json="$1"
 shift
 
+if [ ! -r "$json" ]; then
+    echo "Unable to read file '$json'" 1>&2;
+    exit 1;
+fi
+
 q() {
     cat "$json" | jq .metadata | jq --raw-output "$1"
 }
