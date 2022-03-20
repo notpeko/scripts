@@ -82,6 +82,7 @@ echo "Using block $base_address/$prefix_len"
 ID="[-a-z0-9]+"
 FOLDER_PATTERN="^https?://mega.nz/folder/$ID#$ID$"
 FILE_PATTERN="^https?://mega.nz/file/$ID#$ID$"
+FOLDER_IN_FOLDER_BASE_PATTERN="^\K(https?://mega.nz/folder/$ID#$ID)(?=/folder/$ID$)"
 FOLDER_IN_FOLDER_PATTERN="^https?://mega.nz/folder/$ID#$ID/folder/\K($ID)$"
 FILE_IN_FOLDER_PATTERN="^https?://mega.nz/folder/$ID#$ID/file/$ID$"
 
@@ -191,9 +192,11 @@ fi
 target="$1"
 
 download_folder() {
+    base="$1";
+    shift;
     parser="$1";
     shift;
-    [ -z "$parser" ] && echo "Usage: download_folder <parser> [parser arguments]" && exit 1;
+    [ -z "$base" -o -z "$parser" ] && echo "Usage: download_folder <base uri> <parser> [parser arguments]" && exit 1;
 
     check_deps \
         "mega-login:MEGAcmd (https://github.com/meganz/MEGAcmd)" \
@@ -208,20 +211,21 @@ download_folder() {
         read id;
         dir="$(dirname "$path")";
         mkdir -p "$dir";
-        download_file "$target/file/$id" "--path=$dir";
+        download_file "$base/file/$id" "--path=$dir";
     done
 }
 
 if [ "$(matches "$FOLDER_PATTERN")" = "1" ]; then
     log "Matched folder";
-    download_folder "parse_megals_files";
+    download_folder "$target" "parse_megals_files";
 elif [ "$(matches "$FILE_PATTERN")" = "1" ]; then
     log "Matched file";
     download_file "$target";
 elif [ "$(matches "$FOLDER_IN_FOLDER_PATTERN")" = "1" ]; then
     log "Matched folder in a folder";
-    id="$(echo "$target" | grep -ioP "$FOLDER_IN_FOLDER_PATTERN")"
-    download_folder "parse_megals_files_from_folder" "$id"
+    base="$(echo "$target" | grep -ioP "$FOLDER_IN_FOLDER_BASE_PATTERN")";
+    id="$(echo "$target" | grep -ioP "$FOLDER_IN_FOLDER_PATTERN")";
+    download_folder "$base" "parse_megals_files_from_folder" "$id"
 elif [ "$(matches "$FILE_IN_FOLDER_PATTERN")" = "1" ]; then
     log "Matched file in a folder";
     download_file "$target";
