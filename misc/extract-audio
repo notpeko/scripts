@@ -7,8 +7,27 @@ if [ $# -eq 0 -o $# -gt 2 ]; then
 fi
 
 input="$1"
-output="${input%.*}.m4a"
-[ $# -eq 2 ] && output="$2"
+if [ $# -eq 2 ]; then
+    output="$2"
+else
+    file_info="$(ffprobe -v quiet -print_format json -show_streams "$input")"
+    codec_name="$(echo "$file_info" | jq --raw-output '[ .streams[] | select(.codec_type == "audio") | .codec_name ] | if length == 1 then .[0] else error("Multiple audio streams found") end')"
+    case "$codec_name" in
+        aac)
+            ext="m4a"
+            ;;
+        *)
+            ext="$codec_name"
+            ;;
+    esac
+    output="${input%.*}.$ext"
+fi
 
-ffmpeg -i "$input" -map 0 -map -V -c copy "$output"
+echo "Extracting audio from '$input' into '$output'"
+# try with thumbnail
+if ! ffmpeg -loglevel warning -hide_banner -stats -i "$input" -map 0 -map -V -c copy "$output"; then
+    echo "Failed to extract audio, trying without thumbnail" 1>&2
+    # otherwise try without it
+    ffmpeg -loglevel warning -hide_banner -stats -i "$input" -map 0 -map -v -c copy -y "$output"
+fi
 
