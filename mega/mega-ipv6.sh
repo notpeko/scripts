@@ -37,9 +37,9 @@ check_deps() {
     [ "$fail" = "0" ] || exit 1;
 }
 
-check_deps "megadl:megatools (https://megatools.megous.com, download from https://megatools.megous.com/builds/experimental)"
-
-check_deps "jq:jq" "ip:iproute2"
+check_deps "megadl:megatools (https://megatools.megous.com, download from https://megatools.megous.com/builds/experimental)" \
+    "jq:jq" \
+    "ip:iproute2";
 
 if [ ! -z "$MEGA_INTERFACE" ]; then
     interface=${MEGA_INTERFACE:-he-ipv6}
@@ -79,12 +79,14 @@ fi
 
 echo "Using block $base_address/$prefix_len"
 
-FOLDER_PATTERN="^https?://mega.nz/folder/[-a-z0-9]+#[-a-z0-9]+$"
-FILE_PATTERN="^https?://mega.nz/file/[-a-z0-9]+#[-a-z0-9]+$"
-FILE_IN_FOLDER_PATTERN="^https?://mega.nz/folder/[-a-z0-9]+#[-a-z0-9]+/file/[-a-z0-9]+$"
+ID="[-a-z0-9]+"
+FOLDER_PATTERN="^https?://mega.nz/folder/$ID#$ID$"
+FILE_PATTERN="^https?://mega.nz/file/$ID#$ID$"
+FOLDER_IN_FOLDER_PATTERN="^https?://mega.nz/folder/$ID#$ID/folder/\K($ID)$"
+FILE_IN_FOLDER_PATTERN="^https?://mega.nz/folder/$ID#$ID/file/$ID$"
 
 log() {
-    echo "[$(basename $0)] $@";
+    echo "[$(basename $0)] $@" 1>&2;
 }
 
 rand_part() {
@@ -100,7 +102,7 @@ rand_ip() {
     done
 }
 
-download() {
+download_file() {
     addr="$(rand_ip)";
     url="$1"
     shift
@@ -114,7 +116,7 @@ matches() {
     echo "$target" | grep -iP "$1" > /dev/null && echo 1 || echo 0;
 }
 
-parse_megals() {
+parse_megals_files() {
     folder=
     while read line; do
         if [ -z "$line" ]; then
@@ -144,6 +146,43 @@ parse_megals() {
     done
 }
 
+parse_megals_files_from_folder() {
+    target_folder_id="$1"
+    target_folder=
+    folder=
+    # see above function for explanations
+    while read line; do
+        if [ -z "$line" ]; then
+            [ -z "$folder" ] && echo "Unexpected empty line, should have only one between folders" 1>&2 && exit 1;
+            folder="";
+        elif echo "$line" | grep -qP "^\/.+\:$"; then
+            folder="$(echo "$line" | grep -oP "^/\K(.+)(?=:$)")"
+        elif echo "$line" | grep -qP "^d[-e][-pt][-si]\s"; then
+            [ -z "$folder" ] && echo "Should have been inside a folder" 1>&2 && exit 1;
+            path="$folder/$(echo "$line" | perl -lane 'print "@F[6..$#F]"')"
+            id="$(echo "$line" | awk '{ print $6 }' | grep -oP "^H:\K(.+)$")"
+            if [ "$id" = "$target_folder_id" ]; then
+                log "Found target folder: '$path' ($id)"
+                target_folder="$path"
+            fi
+        elif echo "$line" | grep -qP "^\-[-e][-pt][-si]\s"; then
+            # if folder doesn't start with target_folder, do nothing
+            [ -z "$target_folder" -o "$folder" = "${folder#$target_folder}" ] && continue;
+            path="$folder/$(echo "$line" | perl -lane 'print "@F[6..$#F]"')"
+            id="$(echo "$line" | awk '{ print $6 }' | grep -oP "^H:\K(.+)$")"
+            echo "$path";
+            echo "$id";
+        elif echo "$line" | grep -qP "^[ribx][-e][-pt][-si]\s"; then
+            : # this is a root/inbox/rubbish/unsupported entry, ignore it
+        elif echo "$line" | grep -qP "^FLAGS\s+VERS\s+SIZE\s+DATE\s+HANDLE\s+NAME$"; then
+            : # this is the first line naming the fields, ignore it
+        else
+            echo "Unable to parse line '$line'" 1>&2;
+            exit 1;
+        fi
+    done
+}
+
 if [ $# -eq 0 ]; then
     usage;
     exit 1;
@@ -151,27 +190,41 @@ fi
 
 target="$1"
 
-if [ "$(matches "$FOLDER_PATTERN")" = "1" ]; then
-    log "Matched folder, using a different IP per file";
+download_folder() {
+    parser="$1";
+    shift;
+    [ -z "$parser" ] && echo "Usage: download_folder <parser> [parser arguments]" && exit 1;
+
     check_deps \
         "mega-login:MEGAcmd (https://github.com/meganz/MEGAcmd)" \
         "mega-ls:MEGAcmd (https://github.com/meganz/MEGAcmd)" \
         "mega-quit:MEGAcmd (https://github.com/meganz/MEGAcmd)";
+
     mega-login "$target";
-    parsed="$(mega-ls --show-handles -l -r | parse_megals)"
+    raw="$(mega-ls --show-handles -l -r)";
     mega-quit;
-    echo "$parsed" | while read path; do
+
+    echo "$raw" | "$parser" "$@" | while read path; do
         read id;
-        dir="$(dirname "$path")"
-        mkdir -p "$dir"
-        download "$target/file/$id" "--path=$dir"
+        dir="$(dirname "$path")";
+        mkdir -p "$dir";
+        download_file "$target/file/$id" "--path=$dir";
     done
+}
+
+if [ "$(matches "$FOLDER_PATTERN")" = "1" ]; then
+    log "Matched folder";
+    download_folder "parse_megals_files";
 elif [ "$(matches "$FILE_PATTERN")" = "1" ]; then
     log "Matched file";
-    download "$target";
+    download_file "$target";
+elif [ "$(matches "$FOLDER_IN_FOLDER_PATTERN")" = "1" ]; then
+    log "Matched folder in a folder";
+    id="$(echo "$target" | grep -ioP "$FOLDER_IN_FOLDER_PATTERN")"
+    download_folder "parse_megals_files_from_folder" "$id"
 elif [ "$(matches "$FILE_IN_FOLDER_PATTERN")" = "1" ]; then
     log "Matched file in a folder";
-    download "$target";
+    download_file "$target";
 else
     echo "Unknown url '$target'" 1>&2;
     usage;
