@@ -55,5 +55,5 @@ yt-dlp -o "[%(upload_date)s] %(title)s [%(channel)s] (%(id)s).%(ext)s"          
     --embed-subs                                                                \
     --embed-thumbnail                                                           \
     --compat-options no-attach-info-json                                        \
-    "$@"
+    "$@" 2>&1 | tee log.txt
 
