@@ -12,6 +12,7 @@ Waits until a stream starts and prints the m3u8 manifest,
 optionally posting to a discord webhook as well.
 
     -c, --cookies <file>            Path to cookies.txt
+    -m, --message <text>            Text to include in discord webhooks
     -u, --url-only                  Include only the m3u8 URL on webhooks and stdout
     -w, --webhook <link>            Discord webhook to post the m3u8 in
 EOF
@@ -19,6 +20,7 @@ EOF
 }
 
 cookies=""
+message=""
 url="0"
 webhook=""
 video=""
@@ -34,6 +36,13 @@ while [ "$#" -gt 0 ]; do
             ;;
         -h|--help)
             usage
+            ;;
+        -m|--message)
+            if [ "$#" = 1 ]; then
+                usage "Missing message"
+            fi
+            message="$2"
+            shift 2
             ;;
         -u|--url-only)
             url="1"
@@ -84,6 +93,9 @@ fi
 echo "$content"
 
 if [ ! -z "$webhook" ]; then 
+    if [ ! -z "$message" ]; then
+        content="$(printf "%s\n%s" "$content" "$message")"
+    fi
     curl -sSL -H "Content-Type: application/json" -d "$(jq -nr --arg c "$content" '{ content: $c }')" "$webhook"
 fi
 
