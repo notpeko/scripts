@@ -24,8 +24,10 @@ filename_base="[${date}] $(q .title) [$(q .channelName)] ($(q .id))"
 filename_base="$(echo "$filename_base" | tr "<>:\"/\\\\|?*" '_')"
 
 ytarchive-raw                                   \
-    -i "$json"                                  \
-    -o "$filename_base.mkv"                     \
-    -t 24                                       \
-    "$@"
+    --debug                                     \
+    --fail-threshold 30                         \
+    --input "$json"                             \
+    --output "$filename_base.mkv"               \
+    --threads 24                                \
+    "$@" 2>&1 | tee log.txt
 

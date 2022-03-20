@@ -49,6 +49,7 @@ yt-dlp -o "[%(upload_date)s] %(title)s [%(channel)s] (%(id)s).%(ext)s"          
     --downloader-args aria2c:"-j $concurrency -x $concurrency -s $concurrency"  \
     $write_info_json                                                            \
     $write_thumbnail                                                            \
+    --sub-langs all,-live_chat                                                  \
     --embed-chapters                                                            \
     --embed-metadata                                                            \
     --embed-subs                                                                \

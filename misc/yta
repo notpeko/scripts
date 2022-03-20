@@ -9,6 +9,7 @@ fi
 ytarchive                                                       \
     -o "[%(upload_date)s] %(title)s [%(channel)s] (%(id)s)"     \
     --add-metadata                                              \
+    --debug                                                     \
     --merge                                                     \
     --mkv                                                       \
     --threads 6                                                 \
@@ -16,5 +17,5 @@ ytarchive                                                       \
     --vp9                                                       \
     --wait                                                      \
     --write-thumbnail                                           \
-    "$@"
+    "$@" 2>&1 | tee log.txt
 
