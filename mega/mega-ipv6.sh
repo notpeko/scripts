@@ -7,8 +7,10 @@ Usage: $(basename "$0") <mega url>
 
 Downloads files from mega with a different, random IP per file.
 
-By default, this script looks up IP addresses from the 'he-ipv6' interface, but
-a different one can be chosen with the MEGA_INTERFACE environment variable.
+By default, this script attempts to find an interface with a suitable IPv6 block
+(a /64 or bigger subnet with global scope), picking the biggest block in case
+multiple are available. A specific interface can be chosen with the MEGA_INTERFACE
+environment variable.
 
 All addresses in the prefix of the interface must route to it, and it should be
 able to open connections from any of them.
@@ -38,19 +40,27 @@ check_deps() {
 check_deps "megadl:megatools (https://megatools.megous.com, download from https://megatools.megous.com/builds/experimental)"
 
 check_deps "jq:jq" "ip:iproute2"
-    
-interface=${MEGA_INTERFACE:-he-ipv6}
-if ! ip address show dev "$interface" >/dev/null 2>&1; then
-    echo "Unable to find interface '$interface'" 1>&2;
-    exit 1;
-fi
-    
-jq_query=".[] | select(.ifname == \"$interface\") | .addr_info[] | select(.family == \"inet6\") | select(.scope == \"global\")"
-interface_info="$(ip -j -6 address show dev "$interface" | jq "$jq_query")"
 
-if [ -z "$interface_info" ]; then
-    echo "No routable IPv6 blocks assigned to interface '$interface'" 1>&2;
-    exit 1;
+if [ ! -z "$MEGA_INTERFACE" ]; then
+    interface=${MEGA_INTERFACE:-he-ipv6}
+    if ! ip address show dev "$interface" >/dev/null 2>&1; then
+        echo "Unable to find interface '$interface'" 1>&2;
+        exit 1;
+    fi
+    
+    jq_query=".[] | select(.ifname == \"$interface\") | .addr_info[] | select(.family == \"inet6\") | select(.scope == \"global\")"
+    interface_info="$(ip -j -6 address show dev "$interface" | jq "$jq_query")"
+
+    if [ -z "$interface_info" ]; then
+        echo "No routable IPv6 blocks assigned to interface '$interface'" 1>&2;
+        exit 1;
+    fi
+else
+    interface_info="$(ip -j -6 address | jq '.[].addr_info[] | select(.family == "inet6") | select(.scope == "global")' | jq -s 'select(.[].prefixlen <= 64) | sort_by(.prefixlen)[0]')"
+    if [ -z "$interface_info" ]; then
+        echo "Unable to find a suitable network interface" 1>&2;
+        exit 1;
+    fi
 fi
 
 base_address="$(echo "$interface_info" | jq .local --raw-output)"
@@ -66,6 +76,8 @@ else
     echo "Unsupported prefix length $prefix_len" 1>&2;
     exit 1;
 fi
+
+echo "Using block $base_address/$prefix_len"
 
 FOLDER_PATTERN="^https?://mega.nz/folder/[-a-z0-9]+#[-a-z0-9]+$"
 FILE_PATTERN="^https?://mega.nz/file/[-a-z0-9]+#[-a-z0-9]+$"
