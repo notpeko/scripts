@@ -1,0 +1,19 @@
+#!/bin/sh
+set -euf
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $(basename "$0") <space url> <master url>" 1>&2
+    exit 1
+fi
+
+space="$1"
+master_url="$2"
+shift 2
+
+twspace-dl                                                              \
+    -o "[%(start_date)s] %(title)s [%(creator_screen_name)s] (%(id)s)"  \
+    --write-metadata                                                    \
+    --input-url "$space"                                                \
+    --from-master-url "$master_url"
+    "$@" 2>&1 | tee log.txt
+
