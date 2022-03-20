@@ -44,9 +44,12 @@ if [ "$#" -gt 0 ] && [ "$1" = "__ns_helper" ]; then
     WG_TABLE=2468
     
     wg set "$WG_INTERFACE" fwmark "$WG_FWMARK"
-    ip route add default dev "$WG_INTERFACE" table "$WG_TABLE"
-    ip rule add not fwmark "$WG_FWMARK" table "$WG_TABLE"
-    ip rule add table main suppress_prefixlength 0
+    ip    route add default dev "$WG_INTERFACE" table "$WG_TABLE"
+    ip    rule add not fwmark "$WG_FWMARK" table "$WG_TABLE"
+    ip    rule add table main suppress_prefixlength 0
+    ip -6 route add default dev "$WG_INTERFACE" table "$WG_TABLE"
+    ip -6 rule add not fwmark "$WG_FWMARK" table "$WG_TABLE"
+    ip -6 rule add table main suppress_prefixlength 0
 
     # don't leak private key to child processes
     unset WG_PRIV
