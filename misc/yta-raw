@@ -26,6 +26,6 @@ filename_base="$(echo "$filename_base" | tr "<>:\"/\\\\|?*" '_')"
 ytarchive-raw                                   \
     -i "$json"                                  \
     -o "$filename_base.mkv"                     \
-    -t 6                                        \
+    -t 24                                       \
     "$@"
 
