@@ -13,6 +13,7 @@ ytarchive                                                       \
     --ipv6                                                      \
     --merge                                                     \
     --mkv                                                       \
+    --retry-stream 300                                          \
     --threads 6                                                 \
     --thumbnail                                                 \
     --vp9                                                       \

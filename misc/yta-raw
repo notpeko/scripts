@@ -14,20 +14,12 @@ if [ ! -r "$json" ]; then
     exit 1;
 fi
 
-q() {
-    cat "$json" | jq .metadata | jq --raw-output "$1"
-}
-
-date="$(q '.startTimestamp | split("T") | .[0] | split("-") | join("")')"
-filename_base="[${date}] $(q .title) [$(q .channelName)] ($(q .id))"
-# sanitize path (replaces <, >, :, ", /, \, |, ? and * with _)
-filename_base="$(echo "$filename_base" | tr "<>:\"/\\\\|?*" '_')"
-
-ytarchive-raw                                   \
-    --debug                                     \
-    --fail-threshold 30                         \
-    --input "$json"                             \
-    --output "$filename_base.mkv"               \
-    --threads 24                                \
+ytarchive-raw-go                                                    \
+    --log-level debug                                               \
+    --retries 30                                                    \
+    --input "$json"                                                 \
+    --output "[%(upload_date)s] %(title)s [%(channel)s] (%(id)s)"   \
+    --threads 12                                                    \
+    --temp-dir "yta_raw_temp"                                       \
     "$@" 2>&1 | tee log.txt
 
