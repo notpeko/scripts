@@ -60,6 +60,10 @@ if [ $# -lt 2 ]; then
 fi
 
 CONFIG_FILE="$1"
+if [ ! -e "$CONFIG_FILE" ]; then
+    echo "Configuration file '$CONFIG_FILE' doesn't exist" 1>&2;
+    exit 1;
+fi
 shift
 
 get_single_field() {
