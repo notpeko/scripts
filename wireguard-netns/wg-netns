@@ -1,0 +1,103 @@
+#!/bin/sh
+set -euf
+
+# Configuration
+## Comma separated list of IPs ranges that should
+## bypass the wireguard tunnel
+[ -z "${WG_BYPASS_IPS+x}" ] && WG_BYPASS_IPS=""
+## Network interface to be used by slirp4netns
+[ -z "${SLIRP_INTERFACE+x}" ] && SLIRP_INTERFACE="eth69"
+## Network interface to be used by wireguard
+[ -z "${WG_INTERFACE+x}" ] && WG_INTERFACE="wg69"
+
+if [ "$1" = "__ns_helper" ]; then
+    pid_fifo="$2"
+    setup_fifo="$3"
+    shift 3;
+    # pass pid to slirp4netns
+    echo $$ > "$pid_fifo"
+    rm "$pid_fifo"
+    # wait for interface configuration
+    head -c 1 < "$setup_fifo" > /dev/null
+    rm "$setup_fifo"
+
+    # set up wireguard
+    SLIRP_GATEWAY="$(ip route show default | grep -oP 'via \K(\S+)')"
+    ip link add dev "$WG_INTERFACE" type wireguard
+    for addr in $(echo "$WG_IPS" | tr ',' '\n'); do
+        ip address add dev "$WG_INTERFACE" "$addr";
+    done
+
+    privkey_fifo="$(mktemp -u)";
+    mkfifo "$privkey_fifo";
+    echo "$WG_PRIV" > "$privkey_fifo" && rm "$privkey_fifo" &
+    
+    wg set "$WG_INTERFACE" private-key "$privkey_fifo" peer "$WG_PEER_PUB" \
+        allowed-ips "$WG_PEER_ALLOWED_IPS" endpoint "$WG_PEER_ENDPOINT";
+
+    for addr in $(echo "$WG_BYPASS_IPS" | tr ',' '\n'); do
+        ip route add "$addr" via "$SLIRP_GATEWAY" dev "$SLIRP_INTERFACE";
+    done
+    ip link set up dev "$WG_INTERFACE"
+
+    WG_FWMARK=1234
+    WG_TABLE=2468
+    
+    wg set "$WG_INTERFACE" fwmark "$WG_FWMARK"
+    ip route add default dev "$WG_INTERFACE" table "$WG_TABLE"
+    ip rule add not fwmark "$WG_FWMARK" table "$WG_TABLE"
+    ip rule add table main suppress_prefixlength 0
+
+    # don't leak private key to child processes
+    unset WG_PRIV
+
+    exec "$@"
+fi
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <wg-quick config> <program> [args]" 1>&2;
+    exit 1;
+fi
+
+CONFIG_FILE="$1"
+shift
+
+get_single_field() {
+    input="$(grep -oP "$1 = \K(.+)" "$CONFIG_FILE")"
+    count="$(echo "$input" | wc -l)"
+    if [ "$count" != 1 ]; then
+        echo "Expected field $1 to have a single value, got $count" 1>&2;
+        exit 1;
+    fi
+    echo "$input"
+}
+get_multi_field() {
+    input="$(grep -oP "$1 = \K(.+)" "$CONFIG_FILE")"
+    if [ "$(echo "$input" | wc -l)" = 0 ]; then
+        echo "No value found for field $1" 1>&2;
+        exit 1;
+    fi
+    echo "$input" | tr '\n' ',' | sed 's/,$//'
+}
+
+# export config file values to subprocess
+export WG_IPS="$(get_multi_field Address)"
+export WG_PRIV="$(get_single_field PrivateKey)"
+
+export WG_PEER_PUB="$(get_single_field PublicKey)"
+export WG_PEER_ALLOWED_IPS="$(get_multi_field AllowedIPs)"
+export WG_PEER_ENDPOINT="$(get_single_field Endpoint)"
+
+pid_fifo="$(mktemp -u)"
+mkfifo "$pid_fifo"
+setup_fifo="$(mktemp -u)"
+mkfifo "$setup_fifo"
+
+slirp() {
+    pid="$(cat "$pid_fifo")"
+    slirp4netns --configure --mtu=65520 --ready-fd=9 "$pid" eth69 < /dev/null > /dev/null 2>&1 9>$setup_fifo &
+}
+
+slirp &
+unshare --map-root-user --net "$0" "__ns_helper" "$pid_fifo" "$setup_fifo" "$@"
+
