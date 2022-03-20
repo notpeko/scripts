@@ -35,43 +35,36 @@ check_deps() {
     [ "$fail" = "0" ] || exit 1;
 }
 
-check_deps "megadl:megatools (https://megatools.megous.com)"
+check_deps "megadl:megatools (https://megatools.megous.com, download from https://megatools.megous.com/builds/experimental)"
 
-if [ -z "$__internal_prefix" -o -z "$__internal_parts" ]; then
-    check_deps "jq:jq" "ip:iproute2"
+check_deps "jq:jq" "ip:iproute2"
     
-    interface=${MEGA_INTERFACE:-he-ipv6}
-    if ! ip address show dev "$interface" >/dev/null 2>&1; then
-        echo "Unable to find interface '$interface'" 1>&2;
-        exit 1;
-    fi
+interface=${MEGA_INTERFACE:-he-ipv6}
+if ! ip address show dev "$interface" >/dev/null 2>&1; then
+    echo "Unable to find interface '$interface'" 1>&2;
+    exit 1;
+fi
     
-    jq_query=".[] | select(.ifname == \"$interface\") | .addr_info[] | select(.family == \"inet6\") | select(.scope == \"global\")"
-    interface_info="$(ip -j -6 address show dev "$interface" | jq "$jq_query")"
+jq_query=".[] | select(.ifname == \"$interface\") | .addr_info[] | select(.family == \"inet6\") | select(.scope == \"global\")"
+interface_info="$(ip -j -6 address show dev "$interface" | jq "$jq_query")"
 
-    if [ -z "$interface_info" ]; then
-        echo "No routable IPv6 blocks assigned to interface '$interface'" 1>&2;
-        exit 1;
-    fi
+if [ -z "$interface_info" ]; then
+    echo "No routable IPv6 blocks assigned to interface '$interface'" 1>&2;
+    exit 1;
+fi
 
-    base_address="$(echo "$interface_info" | jq .local --raw-output)"
-    prefix_len="$(echo "$interface_info" | jq .prefixlen --raw-output)"
+base_address="$(echo "$interface_info" | jq .local --raw-output)"
+prefix_len="$(echo "$interface_info" | jq .prefixlen --raw-output)"
 
-    if [ "$prefix_len" = "48" ]; then
-        prefix="$(echo "$base_address" | cut -d: -f1-3)"
-        parts=5
-    elif [ "$prefix_len" = "64" ]; then
-        prefix="$(echo "$base_address" | cut -d: -f1-4)"
-        parts=4
-    else
-        echo "Unsupported prefix length $prefix_len" 1>&2;
-        exit 1;
-    fi
-    export __internal_prefix="$prefix";
-    export __internal_parts="$parts";
+if [ "$prefix_len" = "48" ]; then
+    prefix="$(echo "$base_address" | cut -d: -f1-3)"
+    parts=5
+elif [ "$prefix_len" = "64" ]; then
+    prefix="$(echo "$base_address" | cut -d: -f1-4)"
+    parts=4
 else
-    prefix="$__internal_prefix";
-    parts="$__internal_parts";
+    echo "Unsupported prefix length $prefix_len" 1>&2;
+    exit 1;
 fi
 
 FOLDER_PATTERN="^https?://mega.nz/folder/[a-z0-9]+#[a-z0-9]+$"
@@ -97,14 +90,46 @@ rand_ip() {
 
 download() {
     addr="$(rand_ip)";
-    log "Downloading $1 with IP '$addr'";
+    url="$1"
+    shift
+    log "Downloading $url with IP '$addr'";
     # for testing
     [ ! -z "$DRY_RUN" ] && return 0;
-    megadl "--netif=$addr" "$1";
+    megadl "--netif=$addr" "$url" "$@";
 }
 
 matches() {
     echo "$target" | grep -iP "$1" > /dev/null && echo 1 || echo 0;
+}
+
+parse_megals() {
+    folder=
+    while read line; do
+        if [ -z "$line" ]; then
+            [ -z "$folder" ] && echo "Unexpected empty line, should have only one between folders" 1>&2 && exit 1;
+            folder=""
+        elif echo "$line" | grep -qP "^\/.+\:$"; then
+            folder="$(echo "$line" | grep -oP "^/\K(.+)(?=:$)")"
+        elif echo "$line" | grep -qP "^\-[-e][-pt][-si]\s"; then
+            [ -z "$folder" ] && echo "Should have been inside a folder" 1>&2 && exit 1;
+            # example file line
+            # ----    1    1416686 08Sep2021 02:37:04 H:3X5xQKwC AI_Dottovu.mp3
+            #   1     2       3        4        5          6           7
+
+            # take everything starting from 7th column, preserving original whitespace
+            path="$folder/$(echo "$line" | perl -lane 'print "@F[6..$#F]"')"
+            id="$(echo "$line" | awk '{ print $6 }' | grep -oP "^H:\K(.+)$")"
+            echo "$path";
+            echo "$id";
+        elif echo "$line" | grep -qP "^[dribx][-e][-pt][-si]\s"; then
+            : # this is a folder/root/inbox/rubbish/unsupported entry, ignore it
+        elif echo "$line" | grep -qP "^FLAGS\s+VERS\s+SIZE\s+DATE\s+HANDLE\s+NAME$"; then
+            : # this is the first line naming the fields, ignore it
+        else
+            echo "Unable to parse line '$line'" 1>&2;
+            exit 1;
+        fi
+    done
 }
 
 if [ $# -eq 0 ]; then
@@ -112,10 +137,6 @@ if [ $# -eq 0 ]; then
     exit 1;
 fi
 
-if [ "$1" = "__internal_folder_download" ]; then
-    download "$2/file/$3";
-    exit 0;
-fi
 target="$1"
 
 if [ "$(matches "$FOLDER_PATTERN")" = "1" ]; then
@@ -125,8 +146,14 @@ if [ "$(matches "$FOLDER_PATTERN")" = "1" ]; then
         "mega-ls:MEGAcmd (https://github.com/meganz/MEGAcmd)" \
         "mega-quit:MEGAcmd (https://github.com/meganz/MEGAcmd)";
     mega-login "$target";
-    mega-ls --show-handles | grep -oP "<H:\K(\S+)(?=>)" | xargs -n 1 -i "$0" "__internal_folder_download" "$target" {};
+    parsed="$(mega-ls --show-handles -l -r | parse_megals)"
     mega-quit;
+    echo "$parsed" | while read path; do
+        read id;
+        dir="$(dirname "$path")"
+        mkdir -p "$dir"
+        download "$target/file/$id" "--path=$dir"
+    done
 elif [ "$(matches "$FILE_PATTERN")" = "1" ]; then
     log "Matched file";
     download "$target";
