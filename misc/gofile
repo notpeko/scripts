@@ -1,0 +1,93 @@
+#!/bin/sh
+set -euf
+
+if [ $# -eq 0 ]; then
+    cat 1>&2 <<EOF
+Usage: $(basename "$0") FILE...
+Uploads files to gofile.
+
+It's possible to upload to a specific account or folder by using the
+GOFILE_TOKEN and GOFILE_FOLDER environment variables. If no token is
+specified, a guest account will be created. If a token is specified
+but no folder is, a new folder will be created in the given account.
+Otherwise, the files will be added to the provided folder.
+EOF
+    exit 1;
+fi
+
+get_field() {
+    response="$1"
+    field="$2"
+    shift 2
+    if [ "$(echo "$response" | jq --raw-output .status)" != "ok" ]; then
+        echo "$@ failed" 1>&2;
+        exit 1;
+    fi
+    echo "$response" | jq --raw-output "$field"
+}
+
+server="$(curl -sSL https://api.gofile.io/getServer)"
+server="$(get_field "$server" .data.server "Getting server")"
+server="https://$server.gofile.io"
+
+check_files() {
+    fail=0
+    for f in "$@"; do
+        if [ ! -r "$f" ]; then
+            echo "File '$f' not readable" 1>&2;
+            fail=1
+        fi
+    done
+    [ "$fail" = 0 ] || exit 1
+}
+
+upload_existing_folder() {
+    for f in "$@"; do
+        echo "Uploading $f..."
+        response="$(curl -L -F token="$GOFILE_TOKEN" -F folderId="$GOFILE_FOLDER" -F file=@"$f" "$server/uploadFile")"
+        export GOFILE_PAGE="$(get_field "$response" .data.downloadPage "Uploading file $f")"
+    done
+}
+
+upload_existing_account() {
+    f="$1"
+    shift
+    echo "Uploading $f..."
+    response="$(curl -L -F token="$GOFILE_TOKEN" -F file=@"$f" "$server/uploadFile")"
+
+    export GOFILE_PAGE="$(get_field "$response" .data.downloadPage "Uploading file $f")"
+    export GOFILE_FOLDER="$(get_field "$response" .data.parentFolder "shouldn't fail here")"
+    echo "Created folder $GOFILE_FOLDER"
+
+    upload_existing_folder "$@"
+}
+
+upload_new_guest_account() {
+    f="$1"
+    shift
+    echo "Uploading $f..."
+    response="$(curl -L -F file=@"$f" "$server/uploadFile")"
+
+    export GOFILE_PAGE="$(get_field "$response" .data.downloadPage "Uploading file $f")"
+    export GOFILE_TOKEN="$(get_field "$response" .data.guestToken "shouldn't fail here")"
+    export GOFILE_FOLDER="$(get_field "$response" .data.parentFolder "shouldn't fail here")"
+    echo "Created account/folder $GOFILE_TOKEN/$GOFILE_FOLDER"
+
+    upload_existing_folder "$@"
+}
+
+check_files "$@"
+
+if [ -z "${GOFILE_TOKEN+x}" ]; then
+    upload_new_guest_account "$@"
+elif [ -z "${GOFILE_FOLDER+x}" ]; then
+    upload_existing_account "$@"
+else
+    upload_existing_folder "$@"
+fi
+
+printf "\n\n"
+echo "Token:         $GOFILE_TOKEN"
+echo "Folder ID:     $GOFILE_FOLDER"
+echo "Download page: $GOFILE_PAGE"
+
