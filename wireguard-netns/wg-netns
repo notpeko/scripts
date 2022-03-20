@@ -11,15 +11,16 @@ set -euf
 [ -z "${WG_INTERFACE+x}" ] && WG_INTERFACE="wg69"
 
 if [ "$#" -gt 0 ] && [ "$1" = "__ns_helper" ]; then
-    pid_fifo="$2"
-    setup_fifo="$3"
-    shift 3;
+    fifo_dir="$2"
+    pid_fifo="$3"
+    ready_fifo="$4"
+    shift 4;
     # pass pid to slirp4netns
     echo $$ > "$pid_fifo"
     rm "$pid_fifo"
     # wait for interface configuration
-    head -c 1 < "$setup_fifo" > /dev/null
-    rm "$setup_fifo"
+    head -c 1 < "$ready_fifo" > /dev/null
+    rm "$ready_fifo"
 
     # set up wireguard
     SLIRP_GATEWAY="$(ip route show default | grep -oP 'via \K(\S+)')"
@@ -28,7 +29,7 @@ if [ "$#" -gt 0 ] && [ "$1" = "__ns_helper" ]; then
         ip address add dev "$WG_INTERFACE" "$addr";
     done
 
-    privkey_fifo="$(mktemp -u)";
+    privkey_fifo="$fifo_dir/privkey.fifo";
     mkfifo "$privkey_fifo";
     echo "$WG_PRIV" > "$privkey_fifo" && rm "$privkey_fifo" &
     
@@ -95,16 +96,19 @@ export WG_PEER_PUB="$(get_single_field PublicKey)"
 export WG_PEER_ALLOWED_IPS="$(get_multi_field AllowedIPs)"
 export WG_PEER_ENDPOINT="$(get_single_field Endpoint)"
 
-pid_fifo="$(mktemp -u)"
+fifo_dir="$(mktemp -d)"
+trap "rm -rf '$fifo_dir'" EXIT
+
+pid_fifo="$fifo_dir/pid.fifo"
 mkfifo "$pid_fifo"
-setup_fifo="$(mktemp -u)"
-mkfifo "$setup_fifo"
+ready_fifo="$fifo_dir/ready.fifo"
+mkfifo "$ready_fifo"
 
 slirp() {
     pid="$(cat "$pid_fifo")"
-    slirp4netns --configure --mtu=65520 --ready-fd=9 "$pid" eth69 < /dev/null > /dev/null 2>&1 9>$setup_fifo &
+    slirp4netns --configure --mtu=65520 --ready-fd=9 "$pid" eth69 < /dev/null > /dev/null 2>&1 9>$ready_fifo &
 }
 
 slirp &
-unshare --map-root-user --net "$0" "__ns_helper" "$pid_fifo" "$setup_fifo" "$@"
+unshare --map-root-user --net "$0" "__ns_helper" "$fifo_dir" "$pid_fifo" "$ready_fifo" "$@"
 
