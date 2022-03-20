@@ -18,9 +18,7 @@ ytarchive-raw-go                                                    \
     --log-level debug                                               \
     --retries 25                                                    \
     --input "$json"                                                 \
-    --keep-files                                                    \
     --output "[%(upload_date)s] %(title)s [%(channel)s] (%(id)s)"   \
-    --queue-mode sequential                                         \
     --requeue-failed 2                                              \
     --threads 16                                                    \
     --temp-dir "yta_raw_temp"                                       \
