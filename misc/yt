@@ -2,15 +2,15 @@
 set -euf
 
 getenv_or() {
-    env -0 | grep -zo -m 1 -P "^$1=\\K(.+)" || echo "$2"
+    env -0 | grep -zo -m 1 -P "^$1=\\K(.*)" || echo "$2"
 }
 
 concurrency="$(getenv_or YT_CONCURRENCY 16)"
-external_downloader="--external-downloader aria2c"
+external_downloader="$(getenv_or YT_EXTERNAL_DOWNLOADER '--external-downloader aria2c')"
 write_info_json="--write-info-json"
 write_log_file=1
 write_thumbnail="--write-thumbnail"
-output_format="$(getenv_or YT_OUTPUT '[%(upload_date)s] %(title)s [%(channel)s] (%(id)s).%(ext)s')"
+output_format="$(getenv_or YT_OUTPUT '[%(release_date,upload_date)s] %(title)s [%(channel)s] (%(id)s).%(ext)s')"
 
 if [ $# -eq 0 ]; then
     cat 1>&2 <<EOF
@@ -68,6 +68,8 @@ log() {
 }
 
 yt-dlp -o "$output_format"                                                      \
+    --parse-metadata "%(release_date,upload_date)s:%(date)s"                    \
+    --parse-metadata "%(release_date,upload_date)s:%(meta_date)s"               \
     --concurrent-fragments "$concurrency"                                       \
     $external_downloader                                                        \
     --downloader-args aria2c:"-j $concurrency -x $concurrency -s $concurrency"  \
