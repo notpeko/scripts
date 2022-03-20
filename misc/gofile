@@ -91,4 +91,4 @@ printf "\n\n"
 echo "Token:         $GOFILE_TOKEN"
 echo "Folder ID:     $GOFILE_FOLDER"
 echo "Download page: $GOFILE_PAGE"
-
+printf "\n\n"

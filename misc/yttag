@@ -16,10 +16,10 @@ mkv="$(mktemp --suffix=.mkv)"
 thumb="$(mktemp --suffix=.jpg)"
 trap "rm '$json' '$mkv' '$thumb'" EXIT
 
-yt-dlp -j --skip-download --ignore-no-formats-error "$video" > "$json"
+yt-dlp -j --skip-download --ignore-no-formats-error -- "$video" > "$json"
 
 channel="$(jq -r .channel "$json")"
-date="$(jq -r .upload_date "$json")"
+date="$(jq -r .release_date "$json")"
 desc="$(jq -r .description "$json")"
 id="$(jq -r .id "$json")"
 title="$(jq -r .title "$json")"
@@ -37,7 +37,9 @@ out="[$date] $(clean "$title") [$(clean "$channel")] ($id).$ext"
 wget "$(jq -r .thumbnail "$json")" -O "$thumb"
 
 ffmpeg                                      \
+    -hide_banner                            \
     -i "$in"                                \
+    -map 0 -map -v -map 'V?'                \
     -c copy                                 \
     -map_metadata -1                        \
     -metadata "title=$title"                \
@@ -45,11 +47,13 @@ ffmpeg                                      \
     -metadata "author=$channel"             \
     -metadata "artist=$channel"             \
     -metadata "episode_id=$id"              \
+    -metadata "date=$date"                  \
     -attach "$thumb"                        \
     -metadata:s:t "mimetype=image/jpeg"     \
     -metadata:s:t "filename=thumbnail.jpg"  \
     -y                                      \
     "$mkv"
-ffmpeg -i "$mkv" -c copy "$out"
 
+ffmpeg -hide_banner -i "$mkv" -c copy "$out"
 
+tageditor set "cover=$thumb" -f "$out"

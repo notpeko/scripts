@@ -1,10 +1,16 @@
 #!/bin/sh
 set -euf
 
-concurrency=16
+getenv_or() {
+    env -0 | grep -zo -m 1 -P "^$1=\\K(.+)" || echo "$2"
+}
+
+concurrency="$(getenv_or YT_CONCURRENCY 16)"
 external_downloader="--external-downloader aria2c"
 write_info_json="--write-info-json"
+write_log_file=1
 write_thumbnail="--write-thumbnail"
+output_format="$(getenv_or YT_OUTPUT '[%(upload_date)s] %(title)s [%(channel)s] (%(id)s).%(ext)s')"
 
 if [ $# -eq 0 ]; then
     cat 1>&2 <<EOF
@@ -13,7 +19,9 @@ Usage: $(basename "$0") [options] <yt-dlp arguments>
   --concurrency <value>     How many concurrent fragments/connections to use
   --no-aria2c               Don't use aria2c as an external downloader
   --no-info-json            Don't write info.json
+  --no-log-file             Don't write log.txt
   --no-thumbnail            Don't write thumbnail
+  --output|-o <format>      yt-dlp output template
 EOF
     exit 1
 fi
@@ -33,8 +41,17 @@ while :; do
             write_info_json=""
             shift
             ;;
+        --no-log-file)
+            write_log_file=0
+            shift
+            ;;
         --no-thumbnail)
             write_thumbnail=""
+            shift
+            ;;
+        --output|-o)
+            output_format="$2"
+            shift
             shift
             ;;
         *)
@@ -42,8 +59,15 @@ while :; do
     esac
 done
 
+log() {
+    if [ "$write_log_file" = 1 ]; then
+        tee log.txt
+    else
+        cat
+    fi
+}
 
-yt-dlp -o "[%(upload_date)s] %(title)s [%(channel)s] (%(id)s).%(ext)s"          \
+yt-dlp -o "$output_format"                                                      \
     --concurrent-fragments "$concurrency"                                       \
     $external_downloader                                                        \
     --downloader-args aria2c:"-j $concurrency -x $concurrency -s $concurrency"  \
@@ -55,5 +79,5 @@ yt-dlp -o "[%(upload_date)s] %(title)s [%(channel)s] (%(id)s).%(ext)s"          
     --embed-subs                                                                \
     --embed-thumbnail                                                           \
     --compat-options no-attach-info-json                                        \
-    "$@" 2>&1 | tee log.txt
+    "$@" 2>&1 | log
 

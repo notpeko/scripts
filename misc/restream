@@ -1,0 +1,85 @@
+#!/bin/sh
+set -euf
+
+usage() {
+    if [ $# -gt 0 ]; then
+        echo "$@" 1>&2
+        echo "" 1>&2
+    fi
+    cat 1>&2 <<EOF
+Usage: $(basename -- "$0") [opts] <video id/url>
+Waits until a stream starts and prints the m3u8 manifest,
+optionally posting to a discord webhook as well.
+
+    -c, --cookies <file>            Path to cookies.txt
+    -u, --url-only                  Include only the m3u8 URL on webhooks and stdout
+    -w, --webhook <link>            Discord webhook to post the m3u8 in
+EOF
+    exit 1
+}
+
+cookies=""
+url="0"
+webhook=""
+video=""
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -c|--cookies)
+            if [ "$#" = 1 ]; then
+                usage "Missing cookie path"
+            fi
+            cookies="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        -u|--url-only)
+            url="1"
+            shift
+            ;;
+        -w|--webhook)
+            if [ "$#" = 1 ]; then
+                usage "Missing webhook URL"
+            fi
+            if ! command -v curl > /dev/null; then
+                echo "Unable to find cURL" 1>&2
+                exit 1
+            fi
+            if ! command -v jq > /dev/null; then
+                echo "Unable to find jq" 1>&2
+                exit 1
+            fi
+            webhook="$2"
+            shift 2
+            ;;
+        *)
+            if [ ! -z "$video" ]; then
+                usage
+            fi
+            video="$1"
+            shift
+            ;;
+    esac
+done
+
+json="$(yt-dlp ${cookies:+"--cookies"} ${cookies:+"$cookies"} -j --wait-for-video 30 "$video")"
+
+do_jq() {
+    # i fucking hate shell scripts
+    echo "$json" | tr -d '[:cntrl:]' | jq -r "$1"
+}
+
+if [ "$url" = 1 ]; then
+    content="$(do_jq .manifest_url)"
+else
+    content="$(do_jq '"[" + .upload_date + "] " + .title + " [" + .channel + "] (" + .id + ")\n\n" + .manifest_url')"
+fi
+
+echo "$content"
+
+if [ ! -z "$webhook" ]; then 
+    curl -sSL -H "Content-Type: application/json" -d "$(jq -nr --arg c "$content" '{ content: $c }')" "$webhook"
+fi
+
