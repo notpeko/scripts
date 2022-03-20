@@ -79,7 +79,7 @@ fi
 
 echo "Using block $base_address/$prefix_len"
 
-ID="[-a-z0-9]+"
+ID="[-_a-z0-9]+"
 FOLDER_PATTERN="^https?://mega.nz/folder/$ID#$ID$"
 FILE_PATTERN="^https?://mega.nz/file/$ID#$ID$"
 FOLDER_IN_FOLDER_BASE_PATTERN="^\K(https?://mega.nz/folder/$ID#$ID)(?=/folder/$ID$)"
