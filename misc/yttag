@@ -29,7 +29,7 @@ fi
 json="$(mktemp)"
 mkv="$(mktemp --suffix=.mkv)"
 dl_thumb="$(mktemp)"
-thumb="$(mktemp --suffix=.jpg)"
+thumb="$(mktemp --suffix=.png)"
 var_dir="$(mktemp -d)"
 trap "rm -rf '$json' '$mkv' '$dl_thumb' '$thumb' '$var_dir'" EXIT
 
@@ -107,9 +107,6 @@ ffmpeg                                      \
     -metadata "artist=$channel"             \
     -metadata "episode_id=$id"              \
     -metadata "date=$date"                  \
-    -attach "$thumb"                        \
-    -metadata:s:t "mimetype=image/jpeg"     \
-    -metadata:s:t "filename=thumbnail.jpg"  \
     -y                                      \
     "$mkv"
 
