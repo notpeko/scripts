@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+
+import hashlib
+import json
+import os
+import re
+import subprocess
+import traceback
+
+_win_check = None
+def is_windows_doubleclick():
+    global _win_check
+    if _win_check is not None:
+        return _win_check
+
+    if os.name != 'nt':
+        _win_check = False
+        return _win_check
+    import ctypes
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    process_array = (ctypes.c_uint * 1)()
+    num_processes = kernel32.GetConsoleProcessList(process_array, 1)
+    _win_check = num_processes == 1
+    return _win_check
+
+_req_trace = []
+def _get_trace(session, url, stream):
+    global _req_trace
+    
+    trace = { 'req': {
+        'url': url,
+        'stream': stream,
+        'headers': dict(session.headers)
+    } }
+    _req_trace.append(trace)
+
+    try:
+        res = session.get(url, stream=stream)
+    except e:
+        trace.update({ 'status_code': -1, 'err': traceback.format_exc() })
+        raise e
+    trace.update({ 'status_code': res.status_code, 'response_headers': dict(res.headers) })
+    return trace, res
+
+def api_get(session, url):
+    global _req_trace
+    trace, res = _get_trace(session, url, False)
+    try:
+        data = res.json()
+        trace.update({'res': data})
+        return data
+    except e:
+        trace.update({'res': res.text})
+        raise e
+
+_websiteToken = "websiteToken"
+def get_with_website_token(session, url, fail=False):
+    global _websiteToken
+
+    data = api_get(session, url + "&websiteToken=" + _websiteToken)
+    if data["status"] == "error-notPremium":
+        if fail:
+            raise Exception(f"Extracted website token '{_websiteToken}' not accepted by gofile")
+        print("Fetching new websiteToken")
+        trace, res = _get_trace(session, "https://gofile.io/contents/files.html", False)
+        html = res.text
+        match = re.search('websiteToken"?\s*:\s*"(.+)"', html)
+        if not match:
+            trace.update({'res': html})
+            raise Exception("Unable to extract new websiteToken")
+
+        _websiteToken = match.group(1)
+        return get_with_website_token(session, url, True)
+    return data
+
+
+def bin_get(session, url):
+    global _req_trace
+    trace, res = _get_trace(session, url, True)
+    return res
+
+def die(msg, exception=None):
+    global _responses
+
+    print(msg)
+    if exception:
+        print(exception)
+
+    if len(_req_trace) > 0:
+        print("Request trace:")
+        for t in _req_trace:
+            print(json.dumps(t))
+
+    if is_windows_doubleclick():
+        input("")
+    exit(1)
+
+try:
+    import requests
+except:
+    if is_windows_doubleclick():
+        print("Installing requests...")
+        try:
+            subprocess.run(["python3", "-m", "pip", "install", "requests", "--no-cache-dir"])
+            import requests
+        except e:
+            die("[!] Unable to install requests", traceback.format_exc())
+    else:
+        die("Please install the 'requests' module (`pip3 install requests`)")
+
+COPY_BUFSIZE = 1024 * 1024 if os.name == 'nt' else 64 * 1024
+
+def get_files(fetch, code, path=[]):
+    links = []
+    for item in fetch(code)['data']['contents'].values():
+        if item['type'] == 'file':
+            links.append({
+                'dir': '/'.join(path) if len(path) > 0 else '.',
+                'link': item['link'],
+                'mk5': item['md5'],
+                'name': item['name'],
+                'size': item['size'],
+            })
+        elif item['type'] == 'folder':
+            links.extend(get_files(fetch, item['code'], path + [item['name']]))
+        else:
+            print(f'ERROR: Unknown item type {item["type"]}, skipping: {json.dumps(item)}')
+    return links
+
+def download(gofile_url, password=None):
+    match = re.fullmatch(r'https://gofile.io/d/([^/]*)', gofile_url)
+    if match is None:
+        die(f'ERROR: Unsupported link {gofile_url}, should be https://gofile.io/d/CODE')
+    content_id = match.group(1)
+    s = requests.Session()
+    s.headers.update({
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36'
+    })
+    account_res = api_get(s, 'https://api.gofile.io/createAccount')
+    token = account_res['data']['token']
+    url = f'https://api.gofile.io/getContent?contentId={{}}&token={token}'
+    if password is not None:
+        pw = hashlib.sha256(password.encode()).digest().hex()
+        url += f'&password={pw}'
+    files = get_files(lambda code: get_with_website_token(s, url.format(code)), content_id)
+    try:
+        subprocess.run(['aria2c', '-v'], capture_output=True)
+        has_aria2c = True
+    except:
+        has_aria2c = False
+    if has_aria2c:
+        download_command = [
+            'aria2c', '--enable-rpc=false', '-Z',
+            '--header', f'cookie: accountToken={token}',
+            '-i', '-'
+        ]
+        inp = '\n'.join('{}\n\tdir={}'.format(file['link'], file['dir']) for file in files)
+        subprocess.run(download_command, input=inp.encode())
+    else:
+        print("ERROR: Unable to find aria2c, using fallback downloader")
+        s.headers.update({'cookie': f'accountToken={token}'})
+        for file in files:
+            print(f'Downloading {file["dir"]}/{file["name"]}')
+            downloaded = 0
+            size = file['size']
+            with bin_get(s, file['link']) as r:
+                r.raise_for_status()
+                os.makedirs(file['dir'], exist_ok=True)
+                raw = r.raw
+                with open(f'{file["dir"]}/{file["name"]}', 'wb') as f:
+                    while True:
+                        chunk = raw.read(COPY_BUFSIZE)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        pct = (downloaded / size) * 100
+                        print('\r[{:.1f}%] {}/{} bytes'.format(pct, downloaded, size), end='', flush=True)
+                print()
+
+
+if __name__ == '__main__':
+    if is_windows_doubleclick():
+        os.chdir(os.path.dirname(os.path.realpath(__file__)))
+        link = input("Link: ").strip()
+        password = input("Password (leave empty if none): ").strip()
+        try:
+            download(link, password if len(password) > 0 else None)
+            input("Done! Press enter to exit")
+        except BaseException as e:
+            die("[!] Download failed", traceback.format_exc())
+    else:
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("link", help="Gofile link to download (https://gofile.io/d/CODE)")
+        parser.add_argument("--password", help="Password for password-protected folders")
+        args = parser.parse_args()
+
+        try:
+            download(args.link, args.password)
+        except BaseException as e:
+            die("[!] Download failed", traceback.format_exc())
