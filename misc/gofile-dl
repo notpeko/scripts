@@ -53,7 +53,7 @@ def api_get(session, url):
         trace.update({'res': res.text})
         raise e
 
-_websiteToken = "websiteToken"
+_websiteToken = "12345"
 def get_with_website_token(session, url, fail=False):
     global _websiteToken
 
