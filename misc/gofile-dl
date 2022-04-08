@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import traceback
 
 _win_check = None
@@ -101,7 +102,7 @@ except:
     if is_windows_doubleclick():
         print("Installing requests...")
         try:
-            subprocess.run(["python3", "-m", "pip", "install", "requests", "--no-cache-dir"])
+            subprocess.run([sys.executable, "-m", "pip", "install", "requests", "--no-cache-dir"])
             import requests
         except e:
             die("[!] Unable to install requests", traceback.format_exc())
@@ -187,7 +188,7 @@ if __name__ == '__main__':
         try:
             download(link, password if len(password) > 0 else None)
             input("Done! Press enter to exit")
-        except BaseException as e:
+        except Exception as e:
             die("[!] Download failed", traceback.format_exc())
     else:
         import argparse
@@ -199,5 +200,5 @@ if __name__ == '__main__':
 
         try:
             download(args.link, args.password)
-        except BaseException as e:
+        except Exception as e:
             die("[!] Download failed", traceback.format_exc())
