@@ -37,7 +37,7 @@ def _get_trace(session, url, stream):
 
     try:
         res = session.get(url, stream=stream)
-    except e:
+    except Exception as e:
         trace.update({ 'status_code': -1, 'err': traceback.format_exc() })
         raise e
     trace.update({ 'status_code': res.status_code, 'response_headers': dict(res.headers) })
@@ -50,7 +50,7 @@ def api_get(session, url):
         data = res.json()
         trace.update({'res': data})
         return data
-    except e:
+    except Exception as e:
         trace.update({'res': res.text})
         raise e
 
@@ -104,7 +104,7 @@ except:
         try:
             subprocess.run([sys.executable, "-m", "pip", "install", "requests", "--no-cache-dir"])
             import requests
-        except e:
+        except Exception as e:
             die("[!] Unable to install requests", traceback.format_exc())
     else:
         die("Please install the 'requests' module (`pip3 install requests`)")
