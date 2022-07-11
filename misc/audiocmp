@@ -1,0 +1,59 @@
+#!/bin/sh
+set -euf
+
+if [ $# -lt 2 -o $# -gt 3 ]; then
+    cat 1>&2 <<EOF
+Usage: $(basename -- "$0") <file 1> <file 2> [output bits]
+EOF
+    exit 1
+fi
+
+bits=32
+if [ $# = 3 ]; then
+    bits="$3";
+fi
+
+# no need for cryptographically secure hashes, just detecting if the files are equal
+# so just pick the fastest algorithm, and the best hash if the speeds are identical
+#
+# tested speeds:
+# b2sum                  = 900 MB/s
+# sha1sum ~= md5sum      = 550 MB/s
+# sha512sum ~= sha384sum = 480 MB/s
+# sha256sum ~= sha224sum = 340 MB/s
+cmd=""
+tried_cmd=""
+for try in b2sum sha1sum md5sum sha512sum sha384sum sha256sum sha224sum; do
+    tried_cmd="$tried_cmd $try"
+    if command -v "$try" > /dev/null; then
+        cmd="$try"
+        break
+    fi
+done
+if [ -z "$cmd" ]; then
+    echo "No suitable hash program found, tried $tried_cmd" 1>&2
+    exit 1
+fi
+echo "Hashing raw data with $cmd"
+
+do_hash() {
+    ffmpeg -nostdin -v error -i "$1" -f "s${bits}le" -acodec "pcm_s${bits}le" - | "$cmd" | awk '{ print $1 }'
+}
+
+dir="$(mktemp -d)"
+trap "rm -rf '$dir'" EXIT
+
+do_hash "$1" > "$dir/a" &
+do_hash "$2" > "$dir/b" &
+wait
+a="$(cat "$dir/a")"
+b="$(cat "$dir/b")"
+
+if [ "$a" != "$b" ]; then
+    echo "$a $1" 1>&2
+    echo "$b $2" 1>&2
+    exit 1
+else
+    echo "Data matches"
+fi
+
