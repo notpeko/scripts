@@ -95,21 +95,35 @@ if [ ! -r "$video" ]; then
     fi
 fi
 
-ffmpeg                                      \
-    -hide_banner                            \
-    -i "$in"                                \
-    -map 0 -map -v -map 'V?'                \
-    -c copy                                 \
-    -map_metadata -1                        \
-    -metadata "title=$title"                \
-    -metadata "comment=$description"        \
-    -metadata "author=$channel"             \
-    -metadata "artist=$channel"             \
-    -metadata "episode_id=$id"              \
-    -metadata "date=$date"                  \
-    -y                                      \
-    "$mkv"
+do_tag() {
+    res="$1"
+    shift
+    ffmpeg                                      \
+        -hide_banner                            \
+        -i "$in"                                \
+        -map 0 -map -v -map 'V?'                \
+        -c copy                                 \
+        -y                                      \
+        -map_metadata -1                        \
+        -metadata "title=$title"                \
+        -metadata "comment=$description"        \
+        -metadata "author=$channel"             \
+        -metadata "artist=$channel"             \
+        -metadata "episode_id=$id"              \
+        -metadata "date=$date"                  \
+        "$@"                                    \
+        "$res"
+}
 
-ffmpeg -hide_banner -i "$mkv" -c copy "$out"
-
-tageditor set "cover=$thumb" -f "$out"
+if [ "$ext" = "mkv" ]; then
+    mime="$(file -b --mime-type "$thumb")"
+    thumb_ext="$(echo "$mime" | grep -oP '.+?/\K(.+)')"
+    do_tag "$out"                                   \
+        -attach "$thumb"                            \
+        -metadata:s:t "mimetype=$mime"              \
+        -metadata:s:t "filename=thumb.$thumb_ext"
+else
+    do_tag "$mkv"
+    ffmpeg -hide_banner -i "$mkv" -c copy "$out"
+    tageditor set "cover=$thumb" -f "$out"
+fi
