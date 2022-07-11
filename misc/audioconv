@@ -1,0 +1,84 @@
+#!/bin/sh
+set -euf
+
+usage() {
+    me="$(basename -- "$0")"
+    cat 1>&2 <<EOF
+Usage: $me <source tree> <source extension> <destination tree> <destination extension(s)> [ffmpeg options]
+
+Destinations can be a comma separated list of extensions to try, in order. If conversion to
+a format doesn't decode to exactly the same PCM samples, the next one is tried, failing if
+none manage to losslessly transcode
+
+The destination extensions is a comma separated list of extensions to try, in order, as long as the
+input and output file differ according to \`audiocmp\`. If all extensions decode to different data,
+the last one is kept.
+
+Example
+
+\`$me src wav dst flac,wv\` will convert the following tree
+
+src
+├── a
+│   ├── b
+│   │   ├── cant_be_losslessly_converted_to_flac.wav
+│   │   └── something.wav
+│   └── something_else.WAV
+└── file.WaV
+
+Into (notice that cant_be_losslessly_converted_to_flac.wav was converted into wavpack instead, since flac
+conversion will yield a file that decodes to different data than the input).
+
+dst
+├── a
+│   ├── b
+│   │   ├── cant_be_losslessly_converted_to_flac.wv
+│   │   └── something.flac
+│   └── something_else.flac
+└── file.flac
+EOF
+    exit 1
+}
+
+if [ $# -lt 4 ]; then
+    usage;
+fi
+
+src_tree="$1"
+src_ext="$2"
+dst_tree="$3"
+dst_exts="$4"
+
+shift 4
+
+# copy non audio files
+find "$src_tree" -type f -not -iname "*.$src_ext" -printf '%P\n' | while read file; do
+    src="$src_tree/$file"
+    dst="$dst_tree/$file"
+    mkdir -p "$(dirname -- "$dst")"
+    cp "$src" "$dst"
+done
+
+# convert audio files
+find "$src_tree" -type f -iname "*.$src_ext" -printf '%P\n' | while read file; do
+    src="$src_tree/$file"
+    for dst_ext in $(echo "$dst_exts" | tr ',' '\n'); do
+        dst="$dst_tree/$(dirname -- "$file")/$(basename -- "$file" ".$src_ext").$dst_ext"
+        if [ -e "$dst" ]; then
+            continue
+        fi
+        mkdir -p "$(dirname -- "$dst")"
+        if [ -z "${DRY_RUN:-}" ]; then
+            ffmpeg -nostdin -i "$src" "$@" "$dst"
+            if audiocmp "$src" "$dst"; then
+                break
+            else
+                rm "$dst"
+            fi
+        else
+            echo ffmpeg -nostdin -i "$src" "$@" "$dst"
+            echo audiocmp "$src" "$dst"
+        fi
+    done
+done
+
