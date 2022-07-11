@@ -20,7 +20,7 @@ else
             ext="$codec_name"
             ;;
     esac
-    output="${input%.*}.$ext"
+    output="$(basename "${input%.*}.$ext")"
 fi
 
 echo "Extracting audio from '$input' into '$output'"
