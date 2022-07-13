@@ -2,7 +2,7 @@
 set -euf
 
 getenv_or() {
-    env -0 | grep -zo -m 1 -P "^$1=\\K(.*)" || echo "$2"
+    (env -0 | grep -zo -m 1 -P "^$1=\\K(.*)" || echo "$2") | tr -d '\000'
 }
 
 concurrency="$(getenv_or YT_CONCURRENCY 16)"
