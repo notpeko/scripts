@@ -5,13 +5,36 @@ if [ $# -eq 0 -o $# -gt 2 ]; then
     echo "Usage: $(basename "$0") <input file> [output file (defaults to <input> with extension replaced with an appropriate format)]" 1>&2;
     exit 1;
 fi
-
 input="$1"
+
+file_info="$(ffprobe -v quiet -print_format json -show_streams "$input")"
+echo "Extracting audio from '$input'"
+
+audio_codecs="$(echo "$file_info" | jq --raw-output '[ .streams[] | select(.codec_type == "audio") ]')"
+video_codecs="$(echo "$file_info" | jq --raw-output '[ .streams[] | select(.codec_type == "video") ]')"
+
+if echo "$audio_codecs" | jq 'if length == 1 then true else error("multiple codecs") end' 1>/dev/null 2>&1; then
+    stream_info="$(echo "$audio_codecs" | jq --raw-output '.[0]')"
+else
+    echo "Multiple streams detected, please choose which one to extract:"
+    opts="$(echo "$audio_codecs" | jq -r '.[] | ((.index|tostring) + ") " + .codec_name + ", " + .duration + "s, " + .bit_rate + "bps")')"
+    while true; do
+        echo "$opts"
+        printf "Choose: "
+        read opt;
+        stream_info="$(echo "$audio_codecs" | jq --raw-output --arg codec "$opt" '.[] | select((.index|tostring) == $codec)')"
+        if [ -z "$stream_info" ]; then
+            echo "Invalid option"
+        else
+            break
+        fi
+    done
+fi
+
 if [ $# -eq 2 ]; then
     output="$2"
 else
-    file_info="$(ffprobe -v quiet -print_format json -show_streams "$input")"
-    codec_name="$(echo "$file_info" | jq --raw-output '[ .streams[] | select(.codec_type == "audio") | .codec_name ] | if length == 1 then .[0] else error("Multiple audio streams found") end')"
+    codec_name="$(echo "$stream_info" | jq --raw-output '.codec_name')"
     case "$codec_name" in
         aac)
             ext="m4a"
@@ -22,22 +45,35 @@ else
     esac
     output="$(basename "${input%.*}.$ext")"
 fi
+echo "Saving to '$output'"
 
-echo "Extracting audio from '$input' into '$output'"
-# try with thumbnail
-if ! ffmpeg -loglevel warning -hide_banner -i "$input" -map 0 -map -V -c copy "$output"; then
-    echo "Failed to extract audio, trying without thumbnail" 1>&2
-    # otherwise try without it
-    ffmpeg -loglevel warning -hide_banner -i "$input" -map 0 -map -v -c copy -y "$output"
-    # https://github.com/Martchus/tageditor
-    if command -v tageditor > /dev/null; then
-        echo "Trying to add thumbnail with tageditor" 1>&2
-        thumb="$(mktemp --suffix=.png)"
-        trap "rm $thumb" EXIT;
-        ffmpeg -loglevel warning -hide_banner -i "$input" -map 0 -map -V -map -a -c copy -y "$thumb"
-        tageditor set "cover=$thumb" -f "$output"
-    else
-        echo "Unable to add thumbnail to file, install tageditor (https://github.com/Martchus/tageditor) to do it."
+audio_idx="$(echo "$stream_info" | jq --raw-output '.index')"
+thumb_idx="$(echo "$video_codecs" | jq --raw-output '.[] | select(.codec_name == "mjpeg" or .codec_name == "png") | .index')"
+
+if [ -z "$thumb_idx" ]; then
+    thumb_arg=""
+else
+    thumb_arg="-map 0:$thumb_idx"
+fi
+
+if [ "$thumb_arg" = "" ]; then
+    ffmpeg -loglevel warning -hide_banner -i "$input" -map "0:$audio_idx" -c copy "$output"
+else
+    # try with thumbnail
+    if ! ffmpeg -loglevel warning -hide_banner -i "$input" -map "0:$audio_idx" $thumb_arg -c copy "$output"; then
+        echo "Failed to extract audio, trying without thumbnail" 1>&2
+        # otherwise try without it
+        ffmpeg -loglevel warning -hide_banner -i "$input" -map "0:$audio_idx" -c copy -y "$output"
+        # https://github.com/Martchus/tageditor
+        if command -v tageditor > /dev/null; then
+            echo "Trying to add thumbnail with tageditor" 1>&2
+            thumb="$(mktemp --suffix=.png)"
+            trap "rm $thumb" EXIT;
+            ffmpeg -loglevel warning -hide_banner -i "$input" $thumb_arg -c copy -y "$thumb"
+            tageditor set "cover=$thumb" -f "$output"
+        else
+            echo "Unable to add thumbnail to file, install tageditor (https://github.com/Martchus/tageditor) to do it."
+        fi
     fi
 fi
 
