@@ -77,14 +77,14 @@ done
 if [ ! -r "$video" ]; then
     if command -v convert > /dev/null; then
         jq -re '.thumbnails | sort_by(.preference) | reverse[] | .url' "$json" | while read url; do
-            if wget -O "$dl_thumb" "$url"; then
+            if curl -o "$dl_thumb" "$url"; then
                 convert "$dl_thumb" "$thumb"
                 break
             fi
         done
     else
         jq -re '.thumbnails | sort_by(.preference) | reverse[] | .url | select(. | endswith(".jpg"))' "$json" | while read url; do
-            if wget -O "$thumb" "$url"; then
+            if curl -o "$thumb" "$url"; then
                 break
             fi
         done
