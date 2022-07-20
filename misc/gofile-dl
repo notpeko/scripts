@@ -128,11 +128,18 @@ def get_files(fetch, code, path=[]):
             print(f'ERROR: Unknown item type {item["type"]}, skipping: {json.dumps(item)}')
     return links
 
-def download(gofile_url, password=None):
-    match = re.fullmatch(r'https://gofile.io/d/([^/]*)', gofile_url)
-    if match is None:
+def download(gofile_url, password=None, matching=None):
+    matched = re.fullmatch(r'https://gofile.io/d/([^/]*)', gofile_url)
+    if matched is None:
         die(f'ERROR: Unsupported link {gofile_url}, should be https://gofile.io/d/CODE')
-    content_id = match.group(1)
+    content_id = matched.group(1)
+
+    if matching is not None:
+        try:
+            matching = re.compile(matching)
+        except Exception as e:
+            die(f"ERROR: Unable to compile match regex '{matching}'", e)
+
     s = requests.Session()
     s.headers.update({
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36'
@@ -144,6 +151,9 @@ def download(gofile_url, password=None):
         pw = hashlib.sha256(password.encode()).digest().hex()
         url += f'&password={pw}'
     files = get_files(lambda code: get_with_website_token(s, url.format(code)), content_id)
+    if matching is not None:
+        files = [f for f in files if matching.search(f['dir'] + '/' + f['name']) is not None]
+
     try:
         subprocess.run(['aria2c', '-v'], capture_output=True)
         has_aria2c = True
@@ -196,9 +206,10 @@ if __name__ == '__main__':
         parser = argparse.ArgumentParser()
         parser.add_argument("link", help="Gofile link to download (https://gofile.io/d/CODE)")
         parser.add_argument("--password", help="Password for password-protected folders")
+        parser.add_argument("--matching", help="Only download files that match the given regular expression")
         args = parser.parse_args()
 
         try:
-            download(args.link, args.password)
+            download(args.link, args.password, args.matching)
         except Exception as e:
             die("[!] Download failed", traceback.format_exc())
