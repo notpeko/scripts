@@ -10,7 +10,7 @@ external_downloader="$(getenv_or YT_EXTERNAL_DOWNLOADER '--external-downloader a
 write_info_json="--write-info-json"
 write_log_file=1
 write_thumbnail="--write-thumbnail"
-output_format="$(getenv_or YT_OUTPUT '[%(release_date,upload_date)s] %(title)s [%(channel)s] (%(id)s).%(ext)s')"
+output_format="$(getenv_or YT_OUTPUT '[%(release_date,upload_date)s] %(title)s [%(uploader,uploader_id)s] (%(id)s).%(ext)s')"
 
 if [ $# -eq 0 ]; then
     cat 1>&2 <<EOF
