@@ -77,17 +77,14 @@ if [ -z "$video" ]; then
     usage "Missing video URL"
 fi
 
-json="$(yt-dlp ${cookies:+"--cookies"} ${cookies:+"$cookies"} -j --wait-for-video 30 "$video")"
-
-do_jq() {
-    # i fucking hate shell scripts
-    echo "$json" | tr -d '[:cntrl:]' | jq -r "$1"
+_get_message() {
+    yt-dlp ${cookies:+"--cookies"} ${cookies:+"$cookies"} -j --wait-for-video 30 "$video" | jq -r "$1"
 }
 
 if [ "$url" = 1 ]; then
-    content="$(do_jq .manifest_url)"
+    content="$(_get_message .manifest_url)"
 else
-    content="$(do_jq '"[" + .upload_date + "] " + .fulltitle + " [" + .channel + "] (" + .id + ")\n\n" + .manifest_url')"
+    content="$(_get_message '"[" + .upload_date + "] " + .fulltitle + " [" + .channel + "] (" + .id + ")\n\n" + .manifest_url')"
 fi
 
 echo "$content"
